@@ -1,0 +1,10 @@
+data/
+.venv
+.vscode
+.github
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+env/
+models/
