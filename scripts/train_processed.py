@@ -3,6 +3,7 @@ import copy
 import json
 import random
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -16,6 +17,7 @@ import torch
 import torch.nn as nn
 from torch.optim import AdamW
 from torch.utils.data import DataLoader, Dataset
+from torch.utils.tensorboard import SummaryWriter
 
 from models.transformer import SmallTransformerClassifier
 from utils.data_utils import SimpleTokenizer
@@ -156,9 +158,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--val-csv', type=Path, default=Path('data/combined/processed/validation.csv'))
     parser.add_argument('--test-csv', type=Path, default=Path('data/combined/processed/test.csv'))
     parser.add_argument('--max-len', type=int, default=128)
-    parser.add_argument('--embed-dim', type=int, default=128)
-    parser.add_argument('--num-heads', type=int, default=2)
-    parser.add_argument('--num-layers', type=int, default=2)
+    parser.add_argument('--embed-dim', type=int, default=10)
+    parser.add_argument('--num-heads', type=int, default=1)
+    parser.add_argument('--num-layers', type=int, default=1)
     parser.add_argument('--dropout', type=float, default=0.1)
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--epochs', type=int, default=1000)
@@ -170,6 +172,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--output-dir', type=Path, default=Path('models/processed'))
     parser.add_argument('--patience', type=int, default=100, help='Early stopping patience based on validation loss.')
     parser.add_argument('--min-delta', type=float, default=1e-3, help='Minimum improvement to reset patience.')
+    parser.add_argument('--log-dir', type=Path, default=Path('runs/processed'), help='Base directory for TensorBoard logs.')
+    parser.add_argument('--no-tensorboard', action='store_true', help='Disable TensorBoard logging.')
     return parser.parse_args()
 
 
@@ -236,6 +240,13 @@ def main():
     patience_counter = 0
     best_state = None
 
+    writer: Optional[SummaryWriter] = None
+    run_log_dir: Optional[Path] = None
+    if not args.no_tensorboard:
+        run_log_dir = args.log_dir / datetime.now().strftime('%Y%m%d-%H%M%S')
+        run_log_dir.mkdir(parents=True, exist_ok=True)
+        writer = SummaryWriter(log_dir=str(run_log_dir))
+
     def snapshot_best_state(epoch: int, val_loss: float, val_metrics: Dict[str, float]) -> Dict[str, object]:
         return {
             'model_state_dict': {k: v.detach().cpu().clone() for k, v in model.state_dict().items()},
@@ -267,6 +278,16 @@ def main():
             'val_loss': val_loss,
             'val_metrics': val_metrics,
         })
+
+        if writer is not None:
+            writer.add_scalar('Loss/train', train_loss, epoch)
+            writer.add_scalar('Loss/validation', val_loss, epoch)
+            for metric_name, metric_value in train_metrics.items():
+                writer.add_scalar(f'Metrics/train/{metric_name}', metric_value, epoch)
+            for metric_name, metric_value in val_metrics.items():
+                writer.add_scalar(f'Metrics/validation/{metric_name}', metric_value, epoch)
+            lr = optimizer.param_groups[0]['lr']
+            writer.add_scalar('LearningRate', lr, epoch)
 
         print(
             f"Epoch {epoch}/{args.epochs} | "
@@ -304,6 +325,15 @@ def main():
 
     cfg = {k: (str(v) if isinstance(v, Path) else v) for k, v in vars(args).items()}
 
+    if writer is not None:
+        writer.add_text('config/json', json.dumps(cfg, indent=2))
+        writer.add_scalar('Loss/test', test_loss, best_state['epoch'])
+        for metric_name, metric_value in test_metrics.items():
+            writer.add_scalar(f'Metrics/test/{metric_name}', metric_value, best_state['epoch'])
+        writer.add_text('metrics/best_epoch', str(best_state['epoch']))
+        writer.flush()
+        writer.close()
+
     summary = {
         'train_history': history,
         'best_epoch': best_state['epoch'],
@@ -318,6 +348,7 @@ def main():
             'last_checkpoint': str(last_model_path),
             'tokenizer': str(tokenizer_path),
         },
+        'tensorboard_run_dir': str(run_log_dir) if run_log_dir is not None else None,
     }
 
     with open(metrics_path, 'w', encoding='utf-8') as f:
@@ -327,6 +358,8 @@ def main():
     print(f"Last checkpoint saved to {last_model_path}")
     print(f"Tokenizer saved to {tokenizer_path}")
     print(f"Metrics saved to {metrics_path}")
+    if run_log_dir is not None:
+        print(f"TensorBoard logs written to {run_log_dir}")
 
 
 if __name__ == '__main__':

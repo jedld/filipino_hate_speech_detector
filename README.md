@@ -84,8 +84,17 @@ Key features:
    - `sentiment_transformer_last.pt` (latest epoch checkpoint for resuming interrupted runs)
    - `tokenizer.json` (vocabulary + config)
    - `metrics.json` (training history, validation, and test metrics)
+      - TensorBoard event files under `runs/processed/<timestamp>/`
 
 Override hyperparameters (epochs, learning rate, batch size, etc.) with CLI flags. Use `--help` for the full list.
+
+   To monitor training with TensorBoard:
+
+   ```bash
+   tensorboard --logdir runs/processed
+   ```
+
+   Use `--log-dir` to customize the base path or `--no-tensorboard` to disable logging if desired.
 
    ## Interactive UI
 
