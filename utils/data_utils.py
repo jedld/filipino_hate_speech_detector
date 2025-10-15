@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Optional
 
 import pandas as pd
 import torch
@@ -49,6 +49,88 @@ class SimpleTokenizer:
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         return cls(texts=None, max_len=data['max_len'], word2idx=data['word2idx'])
+
+
+class CharTokenizer:
+    PAD_TOKEN = '<PAD>'
+    UNK_TOKEN = '<UNK>'
+    BOS_TOKEN = '<BOS>'
+    EOS_TOKEN = '<EOS>'
+
+    def __init__(
+        self,
+        texts: Optional[Iterable[str]] = None,
+        char2idx: Optional[Dict[str, int]] = None,
+    ) -> None:
+        if char2idx is not None:
+            # Ensure keys are strings and values are ints
+            self.char2idx = {str(k): int(v) for k, v in char2idx.items()}
+        else:
+            base_tokens = [self.PAD_TOKEN, self.UNK_TOKEN, self.BOS_TOKEN, self.EOS_TOKEN]
+            self.char2idx = {token: idx for idx, token in enumerate(base_tokens)}
+            idx = len(self.char2idx)
+            texts = texts or []
+            for text in texts:
+                for ch in str(text):
+                    if ch not in self.char2idx:
+                        self.char2idx[ch] = idx
+                        idx += 1
+        self.idx2char = {idx: char for char, idx in self.char2idx.items()}
+
+    @property
+    def pad_token_id(self) -> int:
+        return self.char2idx[self.PAD_TOKEN]
+
+    @property
+    def unk_token_id(self) -> int:
+        return self.char2idx[self.UNK_TOKEN]
+
+    @property
+    def bos_token_id(self) -> int:
+        return self.char2idx[self.BOS_TOKEN]
+
+    @property
+    def eos_token_id(self) -> int:
+        return self.char2idx[self.EOS_TOKEN]
+
+    def encode(self, text: str, add_special_tokens: bool = False) -> List[int]:
+        tokens = [self.char2idx.get(ch, self.unk_token_id) for ch in str(text)]
+        if add_special_tokens:
+            tokens = [self.bos_token_id] + tokens + [self.eos_token_id]
+        return tokens
+
+    def decode(self, token_ids: Iterable[int], skip_special_tokens: bool = True) -> str:
+        special = {
+            self.pad_token_id,
+            self.unk_token_id,
+            self.bos_token_id,
+            self.eos_token_id,
+        }
+        chars: List[str] = []
+        for token_id in token_ids:
+            token = int(token_id)
+            if skip_special_tokens and token in special:
+                continue
+            chars.append(self.idx2char.get(token, self.UNK_TOKEN))
+        return ''.join(chars)
+
+    def vocab_size(self) -> int:
+        return len(self.char2idx)
+
+    def to_dict(self) -> Dict[str, Dict[str, int]]:
+        return {'char2idx': self.char2idx}
+
+    def save(self, path: Path) -> None:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(self.to_dict(), f, ensure_ascii=False)
+
+    @classmethod
+    def load(cls, path: Path) -> "CharTokenizer":
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return cls(texts=None, char2idx=data['char2idx'])
 
 class SentimentDataset(Dataset):
     def __init__(self, csv_path, tokenizer: SimpleTokenizer):

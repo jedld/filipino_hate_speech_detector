@@ -126,3 +126,47 @@ Override hyperparameters (epochs, learning rate, batch size, etc.) with CLI flag
    - `--test "your text"` to run a single prediction and exit without starting the UI
 
    The interface reports both class probabilities (hate vs. not hate) and highlights the predicted label.
+
+## Tagalog generative language model
+
+Train a compact Transformer language model that reuses a state-of-the-art subword tokenizer (defaults to `jcblaise/roberta-tagalog-base`) on an open Tagalog corpus (defaults to the OSCAR `unshuffled_deduplicated_tl` subset):
+
+```bash
+python -m scripts.train_tagalog_lm --output-dir models/language_model --epochs 3 --mixed-precision
+```
+
+Key options:
+- `--max-samples` limits the number of documents pulled from the Hugging Face dataset (default 100k).
+- `--block-size`, `--stride`, and model depth flags (`--embed-dim`, `--num-heads`, etc.) control model capacity.
+- `--sample-prompt` and friends customise the post-training sample written to `<output-dir>/sample.txt`.
+- `--tokenizer-name` swaps in a different Hugging Face tokenizer (any `AutoTokenizer`-compatible identifier).
+- For offline experimentation, point the trainer at a local CSV column instead: `--local-csv data/combined/processed/train.csv --csv-text-column text`.
+
+Artifacts land in the chosen output directory:
+- `tagalog_lm.pt` — best-validation checkpoint with optimizer state and hyperparameters.
+- `tokenizer/` — Hugging Face tokenizer folder (vocabulary, merges, special tokens).
+- `language_model_metrics.json` — per-epoch losses/perplexities plus dataset provenance.
+- `sample.txt` — generated continuation from the configured prompt.
+
+### Preparing a Tagalog corpus locally
+
+When working offline or with a custom snapshot of the Tagalog corpus, use the helper script to pull textual assets from the original BERT Tagalog repository and, if needed, fall back to the OSCAR dataset:
+
+```bash
+python -m scripts.download_tagalog_dataset \
+   --output-dir data/tagalog_corpus \
+   --max-samples 200000 \
+   --val-ratio 0.05
+```
+
+The script will:
+
+- Download the textual files (e.g., `vocab.txt`) from `jcblaise/bert-tagalog-base-uncased`.
+- If the repository does not expose a large enough corpus, automatically backfill with the OSCAR Tagalog subset.
+- Write `train.csv`, `val.csv`, and `all_texts.txt` under the requested output directory alongside a `metadata.json` summary.
+
+You can then point the language-model trainer at the generated CSV (the tokenizer will still be pulled from Hugging Face unless overridden):
+
+```bash
+python -m scripts.train_tagalog_lm --local-csv data/tagalog_corpus/train.csv --csv-text-column text
+```

@@ -8,4 +8,5 @@ __pycache__/
 *.pyd
 env/
 models/processed/
+models/language_model_test/
 runs/
