@@ -36,6 +36,8 @@ class HateSpeechPipeline:
         self.tokenizer_path = tokenizer_path
         self.fallback_data_path = fallback_data_path
 
+        self.model_hparams: Dict[str, object] = {}
+
         self.tokenizer = self._load_tokenizer()
         self.model = self._load_model()
         self.model.eval()
@@ -64,12 +66,29 @@ class HateSpeechPipeline:
         state = torch.load(checkpoint_path, map_location=self.device)
 
         if isinstance(state, dict) and "model_state_dict" in state:
-            config = state.get("config", {})
-            embed_dim = int(config.get("embed_dim", 128))
-            num_heads = int(config.get("num_heads", 2))
-            num_layers = int(config.get("num_layers", 2))
-            dropout = float(config.get("dropout", 0.1))
-            max_len = int(config.get("max_len", getattr(self.tokenizer, "max_len", 128)))
+            hyperparams = state.get("model_hyperparams")
+            if hyperparams is None:
+                config = state.get("config", {})
+                hyperparams = {
+                    "embed_dim": config.get("embed_dim", 128),
+                    "num_heads": config.get("num_heads", 2),
+                    "num_layers": config.get("num_layers", 2),
+                    "dropout": config.get("dropout", 0.1),
+                    "max_len": config.get("max_len", getattr(self.tokenizer, "max_len", 128)),
+                }
+            embed_dim = int(hyperparams.get("embed_dim", 128))
+            num_heads = int(hyperparams.get("num_heads", 2))
+            num_layers = int(hyperparams.get("num_layers", 2))
+            dropout = float(hyperparams.get("dropout", 0.1))
+            max_len = int(hyperparams.get("max_len", getattr(self.tokenizer, "max_len", 128)))
+            self.model_hparams = {
+                "embed_dim": embed_dim,
+                "num_heads": num_heads,
+                "num_layers": num_layers,
+                "dropout": dropout,
+                "max_len": max_len,
+            }
+            self.tokenizer.max_len = max_len
             model_state = state["model_state_dict"]
         else:
             # Backwards compatibility with bare state dicts
@@ -78,6 +97,13 @@ class HateSpeechPipeline:
             num_layers = 2
             dropout = 0.1
             max_len = getattr(self.tokenizer, "max_len", 128)
+            self.model_hparams = {
+                "embed_dim": embed_dim,
+                "num_heads": num_heads,
+                "num_layers": num_layers,
+                "dropout": dropout,
+                "max_len": max_len,
+            }
             model_state = state
 
         model = SmallTransformerClassifier(

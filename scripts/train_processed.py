@@ -158,8 +158,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--val-csv', type=Path, default=Path('data/combined/processed/validation.csv'))
     parser.add_argument('--test-csv', type=Path, default=Path('data/combined/processed/test.csv'))
     parser.add_argument('--max-len', type=int, default=128)
-    parser.add_argument('--embed-dim', type=int, default=10)
-    parser.add_argument('--num-heads', type=int, default=1)
+    parser.add_argument('--embed-dim', type=int, default=6)
+    parser.add_argument('--num-heads', type=int, default=2)
     parser.add_argument('--num-layers', type=int, default=1)
     parser.add_argument('--dropout', type=float, default=0.1)
     parser.add_argument('--batch-size', type=int, default=32)
@@ -170,8 +170,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--mixed-precision', action='store_true', help='Enable automatic mixed precision (CUDA only).')
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--output-dir', type=Path, default=Path('models/processed'))
-    parser.add_argument('--patience', type=int, default=100, help='Early stopping patience based on validation loss.')
-    parser.add_argument('--min-delta', type=float, default=1e-3, help='Minimum improvement to reset patience.')
+    parser.add_argument('--patience', type=int, default=100, help='Early stopping patience based on validation accuracy.')
+    parser.add_argument('--min-delta', type=float, default=1e-3, help='Minimum accuracy improvement to reset patience.')
     parser.add_argument('--log-dir', type=Path, default=Path('runs/processed'), help='Base directory for TensorBoard logs.')
     parser.add_argument('--no-tensorboard', action='store_true', help='Disable TensorBoard logging.')
     return parser.parse_args()
@@ -230,12 +230,21 @@ def main():
         dropout=args.dropout,
     ).to(device)
 
+    model_hparams = {
+        'embed_dim': args.embed_dim,
+        'num_heads': args.num_heads,
+        'num_layers': args.num_layers,
+        'dropout': args.dropout,
+        'max_len': args.max_len,
+    }
+
     criterion = nn.CrossEntropyLoss()
     optimizer = AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
     scaler = torch.cuda.amp.GradScaler(enabled=args.mixed_precision and device.type == 'cuda')
 
     history: List[Dict[str, Dict[str, float]]] = []
+    best_val_accuracy = float('-inf')
     best_val_loss = float('inf')
     patience_counter = 0
     best_state = None
@@ -254,6 +263,7 @@ def main():
             'epoch': epoch,
             'val_loss': val_loss,
             'val_metrics': val_metrics,
+            'model_hyperparams': copy.deepcopy(model_hparams),
             'config': {k: (str(v) if isinstance(v, Path) else v) for k, v in vars(args).items()},
         }
 
@@ -295,12 +305,18 @@ def main():
             f"Val Acc: {val_metrics['accuracy']:.4f} | Val F1: {val_metrics['f1']:.4f}"
         )
 
-        if val_loss + args.min_delta < best_val_loss:
+        val_accuracy = val_metrics.get('accuracy', 0.0)
+        improved = val_accuracy > best_val_accuracy + args.min_delta
+
+        if improved:
+            best_val_accuracy = val_accuracy
             best_val_loss = val_loss
             patience_counter = 0
             best_state = snapshot_best_state(epoch, val_loss, val_metrics)
             torch.save(best_state, model_path)
             print(f"New best model saved at epoch {epoch} to {model_path}")
+            if writer is not None:
+                writer.add_scalar('Metrics/validation/best_accuracy', best_val_accuracy, epoch)
         else:
             patience_counter += 1
             if patience_counter > args.patience:
@@ -315,6 +331,8 @@ def main():
 
     if best_state is None:
         best_state = snapshot_best_state(args.epochs, val_loss, val_metrics)
+        best_val_accuracy = best_state['val_metrics'].get('accuracy', best_val_accuracy)
+        best_val_loss = best_state['val_loss']
         torch.save(best_state, model_path)
 
     model.load_state_dict(best_state['model_state_dict'])
@@ -337,11 +355,13 @@ def main():
     summary = {
         'train_history': history,
         'best_epoch': best_state['epoch'],
+        'best_val_accuracy': best_val_accuracy,
         'best_val_loss': best_state['val_loss'],
         'best_val_metrics': best_state['val_metrics'],
         'test_loss': test_loss,
         'test_metrics': test_metrics,
         'config': cfg,
+        'model_hyperparams': model_hparams,
         'device': str(device),
         'artifacts': {
             'best_model': str(model_path),

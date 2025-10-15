@@ -67,6 +67,20 @@ Notes:
 - Label normalization uses simple heuristics mapping various class names to binary 0/1.
 - A JSON report is saved at `data/dataset_preparation_report.json` summarizing actions and any issues.
 
+### Dataset diagnostics
+
+Inspect distribution and text length statistics for the processed dataset with:
+
+```bash
+python -m scripts.dataset_stats
+```
+
+Pass explicit CSV paths to analyze alternative splits:
+
+```bash
+python -m scripts.dataset_stats data/hatespeech_filipino/processed/train.csv data/hatespeech_filipino/processed/validation.csv
+```
+
 ## Training on processed datasets
 
 Once `prepare_datasets.py` has finished, launch the higher-capacity training routine:
@@ -80,11 +94,12 @@ Key features:
 - Optionally augments the training split with the processed GitHub dataset via `--include-github`.
 - Transformer defaults tuned for stronger performance (4 layers, 128-d embeddings, dropout, AdamW, cosine LR, early stopping).
 - Saves outputs under `models/processed/`:
-   - `sentiment_transformer.pt` (best-so-far model + optimizer state, updated whenever validation loss improves)
+   - `sentiment_transformer.pt` (best validation-accuracy checkpoint + optimizer state, with embedded model hyperparameters)
    - `sentiment_transformer_last.pt` (latest epoch checkpoint for resuming interrupted runs)
    - `tokenizer.json` (vocabulary + config)
    - `metrics.json` (training history, validation, and test metrics)
       - TensorBoard event files under `runs/processed/<timestamp>/`
+   - Best-checkpoint metadata stores the transformer hyperparameters, so `scripts.infer` and `scripts.gradio_app` automatically reuse the training configuration.
 
 Override hyperparameters (epochs, learning rate, batch size, etc.) with CLI flags. Use `--help` for the full list.
 
