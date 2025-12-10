@@ -7,7 +7,12 @@ import torch
 from torch.utils.data import Dataset
 
 
+"""Utility functions for data processing and tokenization."""
 class SimpleTokenizer:
+    """
+    A simple whitespace tokenizer that builds a vocabulary from given texts.
+    It can encode texts into sequences of token IDs and handle padding.
+    """
     def __init__(self, texts: Optional[List[str]] = None, max_len: int = 64, word2idx: Optional[Dict[str, int]] = None):
         self.max_len = max_len
         if word2idx is not None:
