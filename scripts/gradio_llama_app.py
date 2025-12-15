@@ -1,11 +1,25 @@
 import argparse
 import torch
+import sys
+import importlib.util
+
+# Workaround for "ValueError: cv2.__spec__ is None" in broken environments
+# This happens when opencv-python is installed but broken, and transformers tries to check for it.
+original_find_spec = importlib.util.find_spec
+def patched_find_spec(name, package=None):
+    try:
+        return original_find_spec(name, package)
+    except ValueError:
+        if name == "cv2":
+            return None
+        raise
+importlib.util.find_spec = patched_find_spec
+
 import gradio as gr
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, BitsAndBytesConfig
 from peft import PeftModel, PeftConfig
 import pandas as pd
 from pathlib import Path
-import sys
 import glob
 import os
 

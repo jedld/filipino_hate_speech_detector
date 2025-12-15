@@ -151,3 +151,16 @@ class SentimentDataset(Dataset):
         x = torch.tensor(self.tokenizer.encode(self.texts[idx]), dtype=torch.long)
         y = torch.tensor(self.labels[idx], dtype=torch.long)
         return x, y
+
+class EncodedTextDataset(Dataset):
+    def __init__(self, texts: List[str], labels: List[int], tokenizer: SimpleTokenizer):
+        self.labels = [int(l) for l in labels]
+        self.encoded = [tokenizer.encode(t) for t in texts]
+
+    def __len__(self):
+        return len(self.labels)
+
+    def __getitem__(self, idx):
+        x = torch.tensor(self.encoded[idx], dtype=torch.long)
+        y = torch.tensor(self.labels[idx], dtype=torch.long)
+        return x, y

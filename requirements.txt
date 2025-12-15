@@ -3,7 +3,12 @@ numpy>=1.26,<2.0
 pandas>=2.2,<2.3
 datasets>=2.19,<3.0
 requests>=2.32,<3.0
+beautifulsoup4>=4.12,<5.0
 pyarrow>=14,<16
 gradio>=4.36,<5
 tensorboard>=2.16,<3
 transformers>=4.44,<5
+torchsummary>=1.5,<2.0
+peft
+bitsandbytes
+accelerate
