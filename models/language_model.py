@@ -24,6 +24,9 @@ class MiniTransformerLanguageModel(nn.Module):
         self.vocab_size = vocab_size
         self.embed_dim = embed_dim
         self.max_position_embeddings = max_position_embeddings
+        self.num_heads = num_heads
+        self.num_layers = num_layers
+        self.ff_multiplier = ff_multiplier
 
         self.token_embedding = nn.Embedding(vocab_size, embed_dim)
         self.pos_embedding = nn.Parameter(torch.zeros(1, max_position_embeddings, embed_dim))
@@ -53,6 +56,12 @@ class MiniTransformerLanguageModel(nn.Module):
 
     def forward(self, input_ids: Tensor) -> Tensor:
         """Compute logits over the vocabulary for each position."""
+        hidden = self.encode(input_ids)
+        logits = self.lm_head(hidden)
+        return logits
+
+    def encode(self, input_ids: Tensor, causal_mask: bool = True) -> Tensor:
+        """Return the contextualized hidden states prior to the LM head."""
         if input_ids.size(1) > self.max_position_embeddings:
             raise ValueError(
                 f"Sequence length {input_ids.size(1)} exceeds max positional embeddings {self.max_position_embeddings}"
@@ -62,11 +71,12 @@ class MiniTransformerLanguageModel(nn.Module):
         hidden_states = self.token_embedding(input_ids) + positions
         hidden_states = self.dropout(hidden_states)
 
-        causal_mask = self._generate_square_subsequent_mask(input_ids.size(1), input_ids.device)
-        transformed = self.transformer(hidden_states, mask=causal_mask)
+        attention_mask = None
+        if causal_mask:
+            attention_mask = self._generate_square_subsequent_mask(input_ids.size(1), input_ids.device)
+        transformed = self.transformer(hidden_states, mask=attention_mask)
         transformed = self.layer_norm(transformed)
-        logits = self.lm_head(transformed)
-        return logits
+        return transformed
 
     @staticmethod
     def _generate_square_subsequent_mask(seq_len: int, device: torch.device) -> Tensor:
